@@ -167,4 +167,20 @@ task или освобождать её ресурсы.
 - заменить набор boolean/handle полей явной player state machine и command
   queue; синхронизацию snapshot для Web/API вести как R-006.
 
+## 2026-08-09 — удалённая проверка R-003
+
+**Действия и результаты:**
+
+- GitHub Actions run `31278172331` успешно собрал опубликованную ветку за
+  2 минуты 47 секунд и загрузил firmware artifacts;
+- обнаружено предупреждение runner о deprecated Node.js 20 в
+  `actions/checkout@v4` и `actions/upload-artifact@v4`;
+- через официальные GitHub releases подтверждены актуальные `v7.0.1` обоих
+  actions и runtime Node.js 24; workflow переведён на стабильные major tags
+  `actions/checkout@v7` и `actions/upload-artifact@v7`.
+
+**Решение D-007:** поддерживать first-party GitHub Actions на актуальном
+стабильном major, совместимом с runtime текущих hosted runners; обновление
+major требует отдельного успешного CI run.
+
 <!-- AISMM:END -->
