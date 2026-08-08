@@ -117,6 +117,8 @@ baseline. Называть полученные сборки версией 2.2.
 - ветка `review/baseline-hardening` отправлена в `origin`;
 - внутри форка открыт draft PR
   `SergeyCHiP/pcradio.esp32#1` с базой `esp32s3n16r8`.
+- первый запуск Actions показал дублирование push и pull_request builds;
+  push trigger ограничен основными ветками, feature-ветки проверяются через PR.
 
 **Решение D-005:** текущая разработка и review PR ведутся в форке. Upstream
 остаётся источником исходных веток; отправка изменений владельцу upstream

@@ -3,8 +3,10 @@ name: Firmware build
 on:
   push:
     branches:
-      - "**"
+      - esp32s3n16r8
+      - update
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
