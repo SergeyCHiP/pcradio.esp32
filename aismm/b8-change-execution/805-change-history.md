@@ -100,4 +100,26 @@ baseline. Называть полученные сборки версией 2.2.
 - следующий P0 — R-003, ownership/cancellation player task и HTTP handle;
 - локальные изменения пока не закоммичены.
 
+## 2026-08-08 — публикация рабочей линии в форке
+
+**Контекст:** принято решение вести дальнейшую разработку в персональном форке.
+
+**Действия и результаты:**
+
+- создан GitHub fork `SergeyCHiP/pcradio.esp32`;
+- remotes приведены к стандартной схеме: `origin` указывает на форк,
+  `upstream` — на `RootShell-coder/pcradio.esp32`;
+- изменения разделены на тематические коммиты:
+  - `98b7a68` — project meta-model and action history;
+  - `bc3265b` — pinned dependencies, Docker build and CI;
+  - `9b89a21` — audio processing buffer lifetime fix;
+- перед публикацией повторно выполнен clean build ESP-IDF 5.4.2;
+- ветка `review/baseline-hardening` отправлена в `origin`;
+- внутри форка открыт draft PR
+  `SergeyCHiP/pcradio.esp32#1` с базой `esp32s3n16r8`.
+
+**Решение D-005:** текущая разработка и review PR ведутся в форке. Upstream
+остаётся источником исходных веток; отправка изменений владельцу upstream
+потребует отдельного решения после стабилизации и проверки на устройстве.
+
 <!-- AISMM:END -->
