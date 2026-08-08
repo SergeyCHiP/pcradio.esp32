@@ -634,6 +634,7 @@ esp_err_t audio_i2s_write(const void *data, size_t size, size_t *bytes_written, 
     const void *data_to_write = data;
     void *heap_buffer = NULL;
     bool using_heap_buffer = false;
+    uint8_t stack_buffer[MAX_STACK_BUFFER_SIZE];
 
     bool alc_conditions_met = s_alc_enabled && s_current_alc_cfg &&
                               s_current_bits_per_sample == s_current_alc_cfg->bits_per_sample &&
@@ -648,7 +649,6 @@ esp_err_t audio_i2s_write(const void *data, size_t size, size_t *bytes_written, 
 
     if (alc_conditions_met || volume_conditions_met || eq_conditions_met) {
         if (size <= MAX_STACK_BUFFER_SIZE) {
-            uint8_t stack_buffer[MAX_STACK_BUFFER_SIZE];
             memcpy(stack_buffer, data, size);
             data_to_write = stack_buffer;
             using_heap_buffer = false;
