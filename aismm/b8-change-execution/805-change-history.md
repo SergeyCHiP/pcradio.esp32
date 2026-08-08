@@ -149,7 +149,10 @@ baseline. Называть полученные сборки версией 2.2.
 - выполнен `idf.py fullclean build` в `espressif/idf:v5.4.2`: build успешен,
   firmware `0x110c10`, свободно 47% минимального app partition;
 - `git diff --check` и поисковые проверки запрещённых lifecycle-паттернов
-  прошли успешно.
+  прошли успешно;
+- реализация и связанные документы сохранены коммитом `adfeb2e` и отправлены
+  в `origin/review/baseline-hardening`; draft PR `#1` дополнен результатами
+  R-003, а GitHub Actions повторно запущен для опубликованного состояния.
 
 **Решение D-006:** task, создавшая HTTP/decoder/session resources, является их
 единственным владельцем до полного завершения cleanup. Timeout ожидания stop
