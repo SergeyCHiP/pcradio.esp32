@@ -2,7 +2,6 @@
 .vscode
 build
 managed_components
-dependencies.lock
 *.old
 debug
 *.SLD*

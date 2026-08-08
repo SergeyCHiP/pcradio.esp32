@@ -1,0 +1,38 @@
+name: Firmware build
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+
+      - name: Build with ESP-IDF 5.4.2
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE":/project \
+            -w /project \
+            espressif/idf:v5.4.2 \
+            idf.py build
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: esp32-pcradio-firmware
+          if-no-files-found: error
+          path: |
+            build/ESP32-PCRadio.bin
+            build/bootloader/bootloader.bin
+            build/partition_table/partition-table.bin
+            build/flash_args
