@@ -25,7 +25,9 @@ references:
 - подтверждён clean Docker build на ESP-IDF 5.4.2;
 - managed dependencies закреплены точными версиями и lock-файлом;
 - добавлен CI workflow сборки и локальный Docker-рецепт;
-- исправлена кодовая часть R-002; target audio test ещё требуется.
+- исправлена кодовая часть R-002; target audio test ещё требуется;
+- для R-003 реализован cooperative stop с одним владельцем stream resources;
+  clean build пройден, target concurrency/stress tests ещё требуются.
 
 ## Этап 0 — определить настоящую базовую линию (P0)
 

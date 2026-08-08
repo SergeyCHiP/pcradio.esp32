@@ -58,6 +58,24 @@ STOPPED -> RESOLVING -> CONNECTING -> BUFFERING -> PLAYING
 - Web/API читает immutable snapshot, а не внутренние mutable pointers;
 - переходы логируются и покрываются тестами.
 
+## Реализованный baseline cooperative stop
+
+В `review/baseline-hardening` сделан первый шаг к целевой машине состояния:
+
+- caller передаёт player task только сигнал остановки и ждёт отдельный сигнал
+  завершения; caller не закрывает HTTP handle и не удаляет task;
+- connection/header операции сохраняют timeout 20 секунд, а после handshake
+  streaming read получает timeout 1 секунду, чтобы task регулярно проверял stop;
+- `ESP_ERR_HTTP_EAGAIN` означает отсутствие данных до следующей итерации, а не
+  немедленный разрыв; общий no-data timeout остаётся 15 секунд;
+- retry delay прерывается stop-сигналом, I²S write ограничен одной секундой;
+- task очищает decoder/HTTP/buffers, обнуляет handle и только затем сообщает о
+  завершении; `player_stop` возвращает timeout, но не разрушает чужие ресурсы.
+
+Это устраняет forced deletion и перекрёстное владение ресурсами, но ещё не
+является полной enum state machine. Нужны target-тесты остановки во время DNS/
+connect/headers/read/ICY/decode/I²S и быстрых переключений каналов.
+
 ## Основные сценарии для тестирования
 
 1. cold boot с корректной и повреждённой конфигурацией;

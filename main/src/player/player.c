@@ -27,6 +27,8 @@ static const char *TAG = "PLAYER";
 static const char* PCRADIO_HOST_PRIMARY = "stream.pcradio.ru";
 #define PCRADIO_NUM_ALT_SERVERS 6
 #define PCRADIO_RETRY_DELAY_MS 5000
+#define PLAYER_STREAM_READ_TIMEOUT_MS 1000
+#define PLAYER_STOP_TIMEOUT_MS 25000
 #define ICY_METADATA_HEADER "Icy-MetaData: 1"
 #define ICY_METAINT_RESPONSE_HEADER "icy-metaint"
 #define ICY_MAX_META_SIZE 4080
@@ -38,6 +40,7 @@ int channels = 2;
 typedef struct {
     TaskHandle_t task_handle;
     SemaphoreHandle_t stop_sem;
+    SemaphoreHandle_t stopped_sem;
     char *original_playlist_url;
     char *current_playback_url;
     char *current_opt;
@@ -60,6 +63,24 @@ static bool s_codec_buffers_initialized = false;
 static void player_task(void *pvParameters);
 
 static esp_err_t player_connect_and_setup_decoder(wrapper_audio_type_t *detected_type_out);
+
+static bool player_take_stop_signal(void) {
+    if (s_player_status.stop_sem != NULL &&
+        xSemaphoreTake(s_player_status.stop_sem, 0) == pdTRUE) {
+        s_player_status.is_playing = false;
+        return true;
+    }
+    return false;
+}
+
+static bool player_wait_or_stop(uint32_t wait_ms) {
+    if (s_player_status.stop_sem != NULL &&
+        xSemaphoreTake(s_player_status.stop_sem, pdMS_TO_TICKS(wait_ms)) == pdTRUE) {
+        s_player_status.is_playing = false;
+        return true;
+    }
+    return false;
+}
 
 static esp_err_t _http_event_handler(esp_http_client_event_t *evt) {
     switch(evt->event_id) {
@@ -195,7 +216,7 @@ static esp_err_t player_connect_and_setup_decoder(wrapper_audio_type_t *detected
         s_player_status.http_client_handle = NULL;
         return err;
     }
-    if (!s_player_status.is_playing) {
+    if (player_take_stop_signal()) {
         ESP_LOGI(TAG, "Setup aborted: playback stopped after HTTP open");
         esp_http_client_close(s_player_status.http_client_handle);
         esp_http_client_cleanup(s_player_status.http_client_handle);
@@ -215,6 +236,14 @@ static esp_err_t player_connect_and_setup_decoder(wrapper_audio_type_t *detected
             s_player_status.http_client_handle = NULL;
         }
         return ESP_FAIL;
+    }
+
+    if (player_take_stop_signal()) {
+        ESP_LOGI(TAG, "Setup aborted: playback stopped after fetching HTTP headers");
+        esp_http_client_close(s_player_status.http_client_handle);
+        esp_http_client_cleanup(s_player_status.http_client_handle);
+        s_player_status.http_client_handle = NULL;
+        return ESP_ERR_INVALID_STATE;
     }
 
     int http_status = esp_http_client_get_status_code(s_player_status.http_client_handle);
@@ -262,6 +291,16 @@ static esp_err_t player_connect_and_setup_decoder(wrapper_audio_type_t *detected
         }
     }
 
+    esp_err_t timeout_err = esp_http_client_set_timeout_ms(
+        s_player_status.http_client_handle, PLAYER_STREAM_READ_TIMEOUT_MS);
+    if (timeout_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set HTTP stream read timeout: %s", esp_err_to_name(timeout_err));
+        esp_http_client_close(s_player_status.http_client_handle);
+        esp_http_client_cleanup(s_player_status.http_client_handle);
+        s_player_status.http_client_handle = NULL;
+        return timeout_err;
+    }
+
     ESP_LOGI(TAG, "HTTP client setup successful for URL: %s", s_player_status.current_playback_url);
     ESP_LOGI(TAG, "Free internal RAM: %u bytes", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
     return ESP_OK;
@@ -270,10 +309,23 @@ static esp_err_t player_connect_and_setup_decoder(wrapper_audio_type_t *detected
 
 esp_err_t player_init(void) {
     ESP_LOGI(TAG, "Initializing player...");
+    bool stop_sem_created = false;
     if (s_player_status.stop_sem == NULL) {
         s_player_status.stop_sem = xSemaphoreCreateBinary();
         if (s_player_status.stop_sem == NULL) {
             ESP_LOGE(TAG, "Failed to create stop semaphore");
+            return ESP_FAIL;
+        }
+        stop_sem_created = true;
+    }
+    if (s_player_status.stopped_sem == NULL) {
+        s_player_status.stopped_sem = xSemaphoreCreateBinary();
+        if (s_player_status.stopped_sem == NULL) {
+            ESP_LOGE(TAG, "Failed to create player completion semaphore");
+            if (stop_sem_created) {
+                vSemaphoreDelete(s_player_status.stop_sem);
+                s_player_status.stop_sem = NULL;
+            }
             return ESP_FAIL;
         }
     }
@@ -353,11 +405,12 @@ esp_err_t player_play_channel(int channel_number) {
         codec_aac_init_buffers(CODEC_AAC_BUFFER_SIZE);
         s_codec_buffers_initialized = true;
     }
-    if (s_player_status.is_playing) {
+    if (s_player_status.task_handle != NULL) {
         ESP_LOGW(TAG, "Player is already playing. Stopping current stream first.");
-        player_stop();
-        while (s_player_status.task_handle != NULL) {
-            vTaskDelay(pdMS_TO_TICKS(10));
+        esp_err_t stop_err = player_stop();
+        if (stop_err != ESP_OK) {
+            ESP_LOGE(TAG, "Cannot switch channel because player did not stop: %s", esp_err_to_name(stop_err));
+            return stop_err;
         }
     }
 
@@ -416,6 +469,7 @@ esp_err_t player_play_channel(int channel_number) {
     playlist_free_channel_data(&ch_data);
 
     xSemaphoreTake(s_player_status.stop_sem, 0);
+    xSemaphoreTake(s_player_status.stopped_sem, 0);
 
     s_player_status.is_playing = true;
 
@@ -440,54 +494,47 @@ esp_err_t player_play_channel(int channel_number) {
 
 esp_err_t player_stop(void) {
     ESP_LOGI(TAG, "Stopping player...");
-    if (!s_player_status.is_playing || s_player_status.task_handle == NULL) {
-        ESP_LOGW(TAG, "Player is not playing or task handle is null.");
-        s_player_status.is_playing = false;
+    if (s_player_status.task_handle == NULL) {
+        ESP_LOGI(TAG, "Player task is not running.");
         return ESP_OK;
     }
 
-    s_player_status.is_playing = false;
-
-    if (s_player_status.stop_sem != NULL) {
-        xSemaphoreGive(s_player_status.stop_sem);
+    if (s_player_status.stop_sem == NULL || s_player_status.stopped_sem == NULL) {
+        ESP_LOGE(TAG, "Player synchronization primitives are not initialized.");
+        return ESP_ERR_INVALID_STATE;
     }
 
-    if (s_player_status.http_client_handle) {
-        ESP_LOGI(TAG, "player_stop: Closing and cleaning up HTTP client to unblock task.");
-        esp_http_client_close(s_player_status.http_client_handle);
-        esp_http_client_cleanup(s_player_status.http_client_handle);
-        s_player_status.http_client_handle = NULL;
+    xSemaphoreGive(s_player_status.stop_sem);
+    if (xSemaphoreTake(s_player_status.stopped_sem,
+                       pdMS_TO_TICKS(PLAYER_STOP_TIMEOUT_MS)) != pdTRUE) {
+        ESP_LOGE(TAG, "Timed out waiting for player task to stop after %d ms.",
+                 PLAYER_STOP_TIMEOUT_MS);
+        return ESP_ERR_TIMEOUT;
     }
 
-    TickType_t max_wait_ticks = pdMS_TO_TICKS(5000);
-    uint32_t task_state_check_count = 0;
-    while (s_player_status.task_handle != NULL && eTaskGetState(s_player_status.task_handle) != eDeleted && task_state_check_count < (max_wait_ticks / pdMS_TO_TICKS(100))) {
-        vTaskDelay(pdMS_TO_TICKS(100));
-        task_state_check_count++;
-    }
-
-    if (s_player_status.task_handle != NULL && eTaskGetState(s_player_status.task_handle) != eDeleted) {
-        ESP_LOGW(TAG, "Player task did not terminate cleanly. Forcing delete.");
-        vTaskDelete(s_player_status.task_handle);
-        s_player_status.task_handle = NULL;
-        cleanup_current_stream_resources();
-    }
-
-    ESP_LOGI(TAG, "Player stopped command issued and processed.");
+    ESP_LOGI(TAG, "Player task stopped cooperatively.");
     return ESP_OK;
 }
 
 
 esp_err_t player_deinit(void) {
     ESP_LOGI(TAG, "Deinitializing player...");
-    if (s_player_status.is_playing) {
-        player_stop();
+    if (s_player_status.task_handle != NULL) {
+        esp_err_t stop_err = player_stop();
+        if (stop_err != ESP_OK) {
+            ESP_LOGE(TAG, "Player deinit aborted because task did not stop: %s", esp_err_to_name(stop_err));
+            return stop_err;
+        }
     }
     cleanup_current_stream_resources();
 
     if (s_player_status.stop_sem != NULL) {
         vSemaphoreDelete(s_player_status.stop_sem);
         s_player_status.stop_sem = NULL;
+    }
+    if (s_player_status.stopped_sem != NULL) {
+        vSemaphoreDelete(s_player_status.stopped_sem);
+        s_player_status.stopped_sem = NULL;
     }
 
     audio_i2s_deinit();
@@ -509,15 +556,16 @@ static void player_task(void *pvParameters) {
         cleanup_current_stream_resources();
         s_player_status.is_playing = false;
         s_player_status.task_handle = NULL;
+        xSemaphoreGive(s_player_status.stopped_sem);
         ESP_LOGI(TAG, "Player task deleting self due to allocation failure.");
         vTaskDelete(NULL);
+        return;
     }
     icy_allocate_buffer(&s_player_status.icy);
 
     while (s_player_status.is_playing) {
-        if (xSemaphoreTake(s_player_status.stop_sem, 0) == pdTRUE) {
+        if (player_take_stop_signal()) {
             ESP_LOGI(TAG, "Stop signal received at the beginning of a stream attempt.");
-            s_player_status.is_playing = false;
             break;
         }
 
@@ -532,6 +580,10 @@ static void player_task(void *pvParameters) {
 
         connect_err = player_connect_and_setup_decoder(&s_player_status.detected_audio_type);
 
+        if (player_take_stop_signal()) {
+            ESP_LOGI(TAG, "Stop signal received after connection attempt.");
+        }
+
         if (connect_err != ESP_OK) {
             ESP_LOGE(TAG, "Connection and setup failed: %s", esp_err_to_name(connect_err));
             current_attempt_failed = true;
@@ -545,17 +597,20 @@ static void player_task(void *pvParameters) {
             TickType_t last_data_time = xTaskGetTickCount();
 
             while (s_player_status.is_playing && !stream_lost_or_ended) {
-                if (xSemaphoreTake(s_player_status.stop_sem, 0) == pdTRUE) {
+                if (player_take_stop_signal()) {
                     ESP_LOGI(TAG, "Stop signal received during data processing loop.");
                     process_data_status = ESP_OK;
                     stream_lost_or_ended = true;
-                    s_player_status.is_playing = false;
                     break;
                 }
 
                 if (s_player_status.icy.metaint_interval > 0 && s_player_status.icy.bytes_until_meta <= 0) {
                     bool meta_end = false;
                     esp_err_t icy_err = icy_process_metadata(&s_player_status.icy, s_player_status.http_client_handle, s_player_status.stop_sem, &meta_end);
+                    if (icy_err == ESP_ERR_INVALID_STATE) {
+                        ESP_LOGI(TAG, "Stop signal received while reading ICY metadata.");
+                        s_player_status.is_playing = false;
+                    }
                     if (icy_err != ESP_OK || meta_end) {
                         process_data_status = ESP_FAIL;
                         stream_lost_or_ended = true;
@@ -576,7 +631,9 @@ static void player_task(void *pvParameters) {
                     current_bytes_read = 0;
                 }
 
-                if (current_bytes_read < 0) {
+                if (current_bytes_read == -ESP_ERR_HTTP_EAGAIN) {
+                    current_bytes_read = 0;
+                } else if (current_bytes_read < 0) {
                     ESP_LOGE(TAG, "HTTP client read error: %s. Status: %d, Content Length: %lld",
                              esp_err_to_name(esp_http_client_get_errno(s_player_status.http_client_handle)),
                              esp_http_client_get_status_code(s_player_status.http_client_handle),
@@ -584,7 +641,9 @@ static void player_task(void *pvParameters) {
                     process_data_status = ESP_FAIL;
                     stream_lost_or_ended = true;
                     break;
-                } else if (current_bytes_read == 0) {
+                }
+
+                if (current_bytes_read == 0) {
                     if (esp_http_client_is_complete_data_received(s_player_status.http_client_handle)) {
                         ESP_LOGI(TAG, "HTTP stream finished (all data received).");
                         process_data_status = ESP_OK;
@@ -605,7 +664,7 @@ static void player_task(void *pvParameters) {
                             vTaskDelay(pdMS_TO_TICKS(200));
                         }
                     }
-                } else {
+                } else if (current_bytes_read > 0) {
                     ESP_LOGD(TAG, "HTTP client read %d bytes.", current_bytes_read);
                     last_data_time = xTaskGetTickCount();
                     if (s_player_status.icy.metaint_interval > 0) {
@@ -791,7 +850,7 @@ static void player_task(void *pvParameters) {
             if (s_player_status.is_pcradio_stream) {
                 s_player_status.pcradio_current_server_idx = (s_player_status.pcradio_current_server_idx + 1) % PCRADIO_NUM_ALT_SERVERS;
                 ESP_LOGI(TAG, "PCRadio: Switching to server index %d after failure. Delaying for %d ms.", s_player_status.pcradio_current_server_idx, PCRADIO_RETRY_DELAY_MS);
-                vTaskDelay(pdMS_TO_TICKS(PCRADIO_RETRY_DELAY_MS));
+                player_wait_or_stop(PCRADIO_RETRY_DELAY_MS);
             } else {
                 ESP_LOGI(TAG, "Non-PCRadio stream failed. Stopping playback.");
                 s_player_status.is_playing = false;
@@ -801,7 +860,7 @@ static void player_task(void *pvParameters) {
             if (s_player_status.is_pcradio_stream) {
                 s_player_status.pcradio_current_server_idx = (s_player_status.pcradio_current_server_idx + 1) % PCRADIO_NUM_ALT_SERVERS;
                 ESP_LOGI(TAG, "PCRadio: Switching to server index %d after stream end (EOF). Delaying for %d ms.", s_player_status.pcradio_current_server_idx, PCRADIO_RETRY_DELAY_MS);
-                vTaskDelay(pdMS_TO_TICKS(PCRADIO_RETRY_DELAY_MS));
+                player_wait_or_stop(PCRADIO_RETRY_DELAY_MS);
             } else {
                 ESP_LOGI(TAG, "Stream ended. Stopping playback.");
                 s_player_status.is_playing = false;
@@ -816,6 +875,7 @@ static void player_task(void *pvParameters) {
     cleanup_current_stream_resources();
     s_player_status.is_playing = false;
     s_player_status.task_handle = NULL;
+    xSemaphoreGive(s_player_status.stopped_sem);
     ESP_LOGI(TAG, "Player task deleting self.");
     vTaskDelete(NULL);
 }

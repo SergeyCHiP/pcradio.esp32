@@ -5,6 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "freertos/FreeRTOS.h"
+
+#define AUDIO_I2S_WRITE_TIMEOUT_MS 1000
 #include "esp_ae_eq.h"
 #include "alc.h"
 

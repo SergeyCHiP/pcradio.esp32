@@ -25,12 +25,12 @@ references:
 | --- | --- | --- | --- |
 | R-001 | P0 | Source baseline не соответствует дистрибутиву 2.2.7 | получить актуальные исходники или утвердить новую линию и gap analysis |
 | R-002 | P0 | `audio_i2s_write`: `data_to_write` сохранял адрес `stack_buffer` после выхода из его scope (`audio_i2s.c:649-793`) | lifetime исправлен в `review/baseline-hardening`; остаются build + target soak/audio test |
-| R-003 | P0 | `player_stop` закрывает общий HTTP handle параллельно player task и затем может принудительно удалить task (`player.c:441-474`) | single-owner state machine, cooperative cancellation, concurrency tests |
+| R-003 | P0 | Исходный `player_stop` закрывал общий HTTP handle параллельно player task и мог принудительно удалить task | cooperative single-owner stop реализован в `review/baseline-hardening`; остаются target concurrency/stress tests и полная state machine |
 | R-004 | P1 | Проверка TLS для playlist выглядит отключённой: нет CA/bundle, включён `skip_cert_common_name_check` (`playlist.c:60-68`) | подтвердить поведением ESP-IDF 5.4.2; включить cert bundle и negative TLS tests |
 | R-005 | P1 | Playlist пишется прямо в рабочий файл; rollback индекса не восстанавливает старый файл (`playlist.c:113-190`, `271-301`) | temp file + validation + fsync + atomic rename + power-loss tests |
 | R-006 | P1 | Shared globals player/playlist/ICY читаются HTTP handlers без общей ownership/snapshot модели | TSAN host model или stress tests; очередь команд и immutable snapshots |
 | R-007 | P1 | Static file path строится непосредственно из URI (`www.c:75-99`) | reject traversal/encoded traversal; canonical allowlisted paths; tests |
-| R-008 | P1 | Первый Docker build подтверждён, но ещё нет CI, unit/integration tests и проверки детерминизма артефактов | toolchain/deps закреплены; добавить CI, static analysis, tests и сравнение artifact hashes |
+| R-008 | P1 | Docker build и GitHub Actions workflow добавлены, но ещё нет unit/integration tests и проверки детерминизма артефактов | добавить static analysis, tests и сравнение artifact hashes; подтвердить стабильный CI run |
 | R-009 | P2 | Ошибки config/LittleFS и ожидание Wi-Fi могут навсегда остановить boot | recovery/captive mode, bounded retries, health state |
 | R-010 | P2 | HTTP body читается одним `httpd_req_recv`, нет общего limit/complete-body helper | централизованный parser, Content-Length limits, fuzz/negative tests |
 | R-011 | P2 | Метрики RX/TX синтетические, зависят от uptime/request count (`metrics.c:127-180`) | убрать или переименовать; использовать реальные счётчики |

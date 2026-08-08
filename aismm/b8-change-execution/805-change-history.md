@@ -124,4 +124,44 @@ baseline. Называть полученные сборки версией 2.2.
 остаётся источником исходных веток; отправка изменений владельцу upstream
 потребует отдельного решения после стабилизации и проверки на устройстве.
 
+## 2026-08-08 — cooperative lifecycle player task (R-003)
+
+**Контекст:** исходный `player_stop` одновременно с player task закрывал и
+освобождал HTTP client, опрашивал состояние task и после пяти секунд мог
+принудительно удалить её. Это создавало use-after-free/double-cleanup и
+оставляло decoder/audio resources в неопределённом состоянии.
+
+**Действия и результаты:**
+
+- по исходникам ESP-IDF 5.4.2 подтверждено, что один HTTP client handle нельзя
+  использовать одновременно из нескольких execution contexts;
+- подтверждены API `esp_http_client_set_timeout_ms` и возврат
+  `-ESP_ERR_HTTP_EAGAIN` при timeout чтения без данных;
+- добавлен completion semaphore: caller сигнализирует stop и ограниченно ждёт,
+  а все stream/decoder resources очищает только player task;
+- удалены внешний HTTP cleanup, polling `eTaskGetState` и forced
+  `vTaskDelete(task_handle)`;
+- connection/header timeout оставлен 20 секунд, streaming timeout установлен в
+  1 секунду, `EAGAIN` включён в существующую 15-секундную no-data policy;
+- чтение ICY metadata стало stop-aware и ограниченным по времени;
+- пятисекундная пауза reconnect теперь прерывается stop-сигналом;
+- бесконечное ожидание I²S write в MP3/AAC заменено timeout 1 секунда;
+- выполнен `idf.py fullclean build` в `espressif/idf:v5.4.2`: build успешен,
+  firmware `0x110c10`, свободно 47% минимального app partition;
+- `git diff --check` и поисковые проверки запрещённых lifecycle-паттернов
+  прошли успешно.
+
+**Решение D-006:** task, создавшая HTTP/decoder/session resources, является их
+единственным владельцем до полного завершения cleanup. Timeout ожидания stop
+возвращается вызывающему коду как ошибка и не даёт права принудительно удалять
+task или освобождать её ресурсы.
+
+**Незакрыто:**
+
+- проверить на ESP32-S3 остановку в фазах connect, headers, stream read, ICY,
+  decode и I²S, включая rapid station switching и недоступный сервер;
+- измерить фактическую stop latency и heap/stack watermark в soak test;
+- заменить набор boolean/handle полей явной player state machine и command
+  queue; синхронизацию snapshot для Web/API вести как R-006.
+
 <!-- AISMM:END -->
