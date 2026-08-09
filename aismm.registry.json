@@ -1,0 +1,46 @@
+{
+  "model_instance_id": "f4c43287-bd9a-437f-b1f2-f979edac7c62",
+  "product_id": "7dd96755-e1a9-42dc-8016-22d83f5a9f42",
+  "product_key": "pcradio_esp32",
+  "product_name": "PCRadio ESP32",
+  "organization_id": "org:rootshell-coder",
+  "aismm_version": "3.1.0-inspired-lite",
+  "registry_version": "1.0.0",
+  "primary_repository": "https://github.com/SergeyCHiP/pcradio.esp32",
+  "upstream_repository": "https://github.com/RootShell-coder/pcradio.esp32",
+  "working_branch": "review/baseline-hardening",
+  "completeness_status": "partial_review_baseline",
+  "last_verified_at": "2026-08-08T19:03:38Z",
+  "sources": [
+    {
+      "source_id": "src.source_branch",
+      "source_type": "git_branch",
+      "url": "https://github.com/RootShell-coder/pcradio.esp32/tree/esp32s3n16r8",
+      "revision": "106140b24e319038769812b7c5e63f4051fbdb70",
+      "status": "available",
+      "required": true,
+      "description": "Reviewed C/ESP-IDF source baseline; older than the distributed 2.2.7 firmware"
+    },
+    {
+      "source_id": "src.distribution_branch",
+      "source_type": "git_branch",
+      "url": "https://github.com/RootShell-coder/pcradio.esp32/tree/update",
+      "revision": "be9de46cd980b27ef8070d63bbe7188baa149d59",
+      "status": "available",
+      "required": true,
+      "description": "Binary firmware 2.2.7, WebUI image, manifests and current user documentation"
+    },
+    {
+      "source_id": "src.reference_model",
+      "source_type": "git_repository",
+      "url": "https://github.com/orkestron-ai/software-meta-model",
+      "status": "reference",
+      "required": false,
+      "description": "AISMM structure used as the conceptual basis for this reduced model"
+    }
+  ],
+  "expected_bundles": ["b0", "b2", "b3", "b4", "b7", "b8", "b9"],
+  "expected_layers": ["001", "201", "302", "405", "702", "802", "805", "901"],
+  "declared_empty_layers": [],
+  "notes": "AISMM-inspired reduced model. It intentionally models only the layers needed to establish an architecture and review/refactoring baseline; it does not claim formal AISMM conformance. The 2.2.7 source commit a1a9f07ec77c68b4104d2766b02f9b4dcc897b3a referenced by the OTA manifest is not exposed by the remote repository."
+}

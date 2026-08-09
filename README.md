@@ -12,6 +12,9 @@ Libraries
 - esp_audio_codec 2.3.0
 - esp_audio_effects 1.1.0
 
+See [DEVELOPMENT.md](DEVELOPMENT.md) for the pinned Docker build and baseline
+limitations.
+
 Script `create_littlefs.cmd` for creating image and flashing data folder. (Uses mklittlefs.exe)
 
 Config WiFi `./data/config.json`

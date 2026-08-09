@@ -243,7 +243,8 @@ esp_err_t codec_aac_process_data(esp_audio_dec_handle_t dec_handle, const uint8_
         if (dec_err == ESP_AUDIO_ERR_OK) {
             if (out_frame.decoded_size > 0) {
                 size_t bytes_written_to_i2s = 0;
-                esp_err_t i2s_err = audio_i2s_write(out_frame.buffer, out_frame.decoded_size, &bytes_written_to_i2s, portMAX_DELAY);
+                esp_err_t i2s_err = audio_i2s_write(out_frame.buffer, out_frame.decoded_size, &bytes_written_to_i2s,
+                                                    pdMS_TO_TICKS(AUDIO_I2S_WRITE_TIMEOUT_MS));
                 if (i2s_err != ESP_OK) {
                     ESP_LOGW(TAG, "Failed to write %" PRIu32 " AAC PCM bytes to I2S: %s. Written: %zu",
                              out_frame.decoded_size, esp_err_to_name(i2s_err), bytes_written_to_i2s);

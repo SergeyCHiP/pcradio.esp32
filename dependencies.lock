@@ -1,0 +1,42 @@
+dependencies:
+  espressif/esp_audio_codec:
+    component_hash: 
+      04c2f0d5eca207cdfabd3aafc50ef4bca53532115ddf7689e5cfabd00eb88b02
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.4'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 2.3.0
+  espressif/esp_audio_effects:
+    component_hash: 
+      54af7c9a4f40703325482660ffb3a8b5f66fa56cb92f6db220f8b11ec2b6a32b
+    dependencies: []
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.1.0
+  idf:
+    source:
+      type: idf
+    version: 5.4.2
+  joltwallet/littlefs:
+    component_hash: 
+      8e12955f47e27e6070b76715a96d6c75fc2b44f069e8c33679332d9bdd3120c4
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.20.1
+direct_dependencies:
+- espressif/esp_audio_codec
+- espressif/esp_audio_effects
+- joltwallet/littlefs
+manifest_hash: 48424d4ea38edaafcd2e709f154b9c79d56cf09d77298115f16d56f31cfe4af2
+target: esp32s3
+version: 2.0.0

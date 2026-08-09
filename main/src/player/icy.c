@@ -7,6 +7,27 @@
 #include <string.h>
 
 static const char *TAG_ICY = "ICY";
+#define ICY_READ_TIMEOUT_MS 15000
+
+static int icy_read_with_stop(esp_http_client_handle_t client, char *buffer, int length,
+                              SemaphoreHandle_t stop_sem) {
+    TickType_t last_data_time = xTaskGetTickCount();
+
+    while (true) {
+        if (stop_sem && xSemaphoreTake(stop_sem, 0) == pdTRUE) {
+            return -ESP_ERR_INVALID_STATE;
+        }
+
+        int read_len = esp_http_client_read(client, buffer, length);
+        if (read_len != -ESP_ERR_HTTP_EAGAIN) {
+            return read_len;
+        }
+
+        if ((xTaskGetTickCount() - last_data_time) > pdMS_TO_TICKS(ICY_READ_TIMEOUT_MS)) {
+            return -ESP_ERR_TIMEOUT;
+        }
+    }
+}
 
 void icy_state_init(icy_state_t *state) {
     if (!state) return;
@@ -77,14 +98,15 @@ esp_err_t icy_process_metadata(icy_state_t *state, esp_http_client_handle_t clie
     if (state->metaint_interval <= 0) return ESP_OK;
     if (!state->meta_buffer) return ESP_FAIL;
     uint8_t len_byte = 0;
-    int r = esp_http_client_read(client, (char*)&len_byte, 1);
+    int r = icy_read_with_stop(client, (char*)&len_byte, 1, stop_sem);
+    if (r == -ESP_ERR_INVALID_STATE) { *stream_end = true; return ESP_ERR_INVALID_STATE; }
     if (r <= 0) { *stream_end = true; return (r < 0) ? ESP_FAIL : ESP_OK; }
     int meta_len = len_byte * 16;
     if (meta_len > state->buffer_capacity - 1) meta_len = state->buffer_capacity - 1;
     int total = 0;
     while (total < meta_len) {
-        if (stop_sem && xSemaphoreTake(stop_sem, 0) == pdTRUE) { *stream_end = true; break; }
-        r = esp_http_client_read(client, (char *)state->meta_buffer + total, meta_len - total);
+        r = icy_read_with_stop(client, (char *)state->meta_buffer + total, meta_len - total, stop_sem);
+        if (r == -ESP_ERR_INVALID_STATE) { *stream_end = true; return ESP_ERR_INVALID_STATE; }
         if (r <= 0) { *stream_end = true; break; }
         total += r;
     }
